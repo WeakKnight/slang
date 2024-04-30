@@ -5,8 +5,20 @@
 #include "slang-repro.h"
 
 #include "../core/slang-shared-library.h"
+#include "../core/slang-blob.h"
 
 // implementation of C interface
+
+SLANG_API ISlangBlob* spCreateBlob(void* data, size_t size)
+{
+    auto result = Slang::RawBlob::create(data, size);
+    return result.detach();
+}
+
+SLANG_API void spDestroyBlob(ISlangBlob* blob)
+{
+    blob->release();
+}
 
 SLANG_API SlangSession* spCreateSession(const char*)
 {

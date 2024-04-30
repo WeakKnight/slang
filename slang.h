@@ -1587,6 +1587,15 @@ extern "C"
     */
     typedef struct slang::ICompileRequest SlangCompileRequest;
 
+    /*!
+    @brief Create a raw buffer owns a copy of the input data.
+    */
+    SLANG_API ISlangBlob* spCreateBlob(void* data, size_t size);
+
+    /*!
+    @brief Destroy a raw buffer.
+    */
+    SLANG_API void spDestroyBlob(ISlangBlob* blob);
 
     /*!
     @brief Initialize an instance of the Slang library.
