@@ -437,6 +437,13 @@ class HLSLTriangleStreamType : public HLSLStreamOutputType
     FIDDLE(...)
 };
 
+/// An implicit Metal imageblock supplied by the tile stage, without a host resource binding.
+FIDDLE()
+class MetalImageBlockType : public BuiltinGenericType
+{
+    FIDDLE(...)
+};
+
 // mesh shader output types
 
 FIDDLE()
@@ -823,6 +830,9 @@ class PtrTypeBase : public BuiltinType
     Type* getDataLayout();
 
     std::optional<AccessQualifier> tryGetAccessQualifierValue();
+
+    /// Returns the address space, or `AddressSpace::Generic` when it is not yet a constant.
+    AddressSpace tryGetAddressSpaceValue();
 };
 
 FIDDLE()

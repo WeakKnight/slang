@@ -1296,6 +1296,11 @@ AddressSpace tryGetAddressSpaceValue(Val* addrSpaceVal)
     return addrSpace;
 }
 
+AddressSpace PtrTypeBase::tryGetAddressSpaceValue()
+{
+    return Slang::tryGetAddressSpaceValue(getAddressSpace());
+}
+
 void maybePrintAddrSpaceOperand(StringBuilder& out, AddressSpace addrSpace)
 {
     switch (addrSpace)
@@ -1359,7 +1364,7 @@ void maybePrintDataLayoutOperand(StringBuilder& out, Type* dataLayout)
 
 void PtrType::_toTextOverride(StringBuilder& out)
 {
-    auto addrSpace = tryGetAddressSpaceValue(getAddressSpace());
+    auto addrSpace = tryGetAddressSpaceValue();
     out << toSlice("Ptr<") << getValueType();
     if (auto optionalAccessQualifier = tryGetAccessQualifierValue())
         maybePrintAccessQualifierOperand(out, *optionalAccessQualifier);
@@ -1370,7 +1375,7 @@ void PtrType::_toTextOverride(StringBuilder& out)
 
 void ExplicitRefType::_toTextOverride(StringBuilder& out)
 {
-    auto addrSpace = tryGetAddressSpaceValue(getAddressSpace());
+    auto addrSpace = tryGetAddressSpaceValue();
     out << toSlice("Ref<") << getValueType();
     if (auto optionalAccessQualifier = tryGetAccessQualifierValue())
         maybePrintAccessQualifierOperand(out, *optionalAccessQualifier);

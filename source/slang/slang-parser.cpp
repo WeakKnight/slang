@@ -5129,26 +5129,29 @@ static NodeBase* parsePropertyDecl(Parser* parser, void* /*userData*/)
 
 // Parse a typed accessor for a semantic declaration:
 // "[modifiers] get : <type>;" or "[modifiers] set : <type>;"
+//
+// An accessor may declare generic parameters, as in "get<T> : Ptr<T, ...>;", to accept
+// every type that matches its type pattern. The accessor is then wrapped in a `GenericDecl`,
+// and its modifiers stay on the inner accessor.
 static Decl* parseSemanticAccessorDecl(Parser* parser)
 {
     Modifiers modifiers = ParseModifiers(parser);
 
-    Decl* decl = nullptr;
     auto loc = peekToken(parser).loc;
     auto name = peekToken(parser).getName();
 
+    Decl* decl = nullptr;
+    TypeExp* accessorType = nullptr;
     if (AdvanceIf(parser, "get"))
     {
         auto getter = parser->astBuilder->create<SemanticGetterDecl>();
-        expect(parser, TokenType::Colon);
-        getter->type = parser->ParseTypeExp();
+        accessorType = &getter->type;
         decl = getter;
     }
     else if (AdvanceIf(parser, "set"))
     {
         auto setter = parser->astBuilder->create<SemanticSetterDecl>();
-        expect(parser, TokenType::Colon);
-        setter->type = parser->ParseTypeExp();
+        accessorType = &setter->type;
         decl = setter;
     }
     else
@@ -5163,9 +5166,18 @@ static Decl* parseSemanticAccessorDecl(Parser* parser)
 
     _addModifiers(decl, modifiers);
 
+    auto result = parseOptGenericDecl(
+        parser,
+        [&](GenericDecl*)
+        {
+            expect(parser, TokenType::Colon);
+            *accessorType = parser->ParseTypeExp();
+            return decl;
+        });
+
     parser->ReadToken(TokenType::Semicolon);
 
-    return decl;
+    return result;
 }
 
 // Parse the body of a semantic declaration: { [accessor]* }

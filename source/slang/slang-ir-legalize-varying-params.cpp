@@ -2967,7 +2967,6 @@ protected:
         SLANG_UNUSED(entryPoint);
     }
 
-
     std::optional<SystemValLegalizationWorkItem> tryToMakeSystemValWorkItem(
         IRInst* var,
         IRType* varType) const
@@ -4331,6 +4330,52 @@ public:
         generatePermittedTypes_sv_target();
     }
 
+    // Legalize every `MetalImageBlock` shader parameter of the module for Metal.
+    //
+    // An imageblock is a shader parameter that the render pass supplies without a binding,
+    // like a `SubpassInput`, so it can be declared as an entry-point parameter, as a global,
+    // or as a field of a uniform struct. Consider this example:
+    //
+    //     struct TileParams { MetalImageBlock<Pixel> imageBlock; float scale; };
+    //     TileParams tile;
+    //
+    // Resource type legalization has already split `tile.imageBlock` out of `tile` into a
+    // global parameter of its own, so by now each imageblock is either a parameter of an
+    // entry point or an `IRGlobalParam`; `introduceExplicitGlobalContext` later turns the
+    // globals that a tile entry point uses into parameters of that entry point. We decorate
+    // the element struct of each imageblock type once, and reject an imageblock that is
+    // declared on an entry point that is not a tile shader, where Metal provides none.
+    //
+    // We run before `legalizeEntryPoints`, which strips the semantics from any struct it
+    // legalizes as a varying, such as a `Pixel` that a fragment shader also returns.
+    void legalizeImageBlocks(List<EntryPointInfo>& entryPoints)
+    {
+        for (auto& entryPoint : entryPoints)
+        {
+            // An imageblock has no resource kind in its layout, so a direct entry-point
+            // parameter stays on the entry point, still wrapped as a `BorrowInParam` until
+            // `depointerizeInputParams` runs.
+            for (auto param : entryPoint.entryPointFunc->getParams())
+            {
+                auto paramType = param->getDataType();
+                if (auto borrowType = as<IRBorrowInParamType>(paramType))
+                    paramType = borrowType->getValueType();
+                legalizeImageBlockParam(param, paramType, entryPoint.entryPointDecor);
+            }
+        }
+        for (auto inst : m_module->getGlobalInsts())
+        {
+            auto globalParam = as<IRGlobalParam>(inst);
+            if (!globalParam)
+                continue;
+            IREntryPointDecoration* entryPointDecor = nullptr;
+            if (auto paramDecor = globalParam->findDecoration<IREntryPointParamDecoration>())
+                entryPointDecor =
+                    paramDecor->getEntryPoint()->findDecoration<IREntryPointDecoration>();
+            legalizeImageBlockParam(globalParam, globalParam->getDataType(), entryPointDecor);
+        }
+    }
+
 protected:
     SystemValueInfo getSystemValueInfo(
         String inSemanticName,
@@ -4595,6 +4640,19 @@ protected:
                 result.permittedTypes.add(builder.getVectorType(
                     builder.getBasicType(BaseType::Float),
                     builder.getIntValue(builder.getIntType(), 3)));
+                break;
+            }
+        case SystemValueSemanticName::MetalThreadgroup:
+            {
+                // The front end only accepts `Ptr<T, Access.ReadWrite,
+                // AddressSpace.GroupShared>` for this semantic (see `sv_metalthreadgroup`
+                // in core.meta.slang), so the parameter's own pointer type is the permitted
+                // type. Keeping it unchanged preserves the pointee type `T` and the
+                // threadgroup address space that loads, stores and atomics through the
+                // pointer depend on.
+                result.systemValueName =
+                    (StringBuilder() << "threadgroup(" << semanticIndex << ")").produceString();
+                result.permittedTypes.add(parentVar->getDataType());
                 break;
             }
         default:
@@ -4921,6 +4979,77 @@ protected:
         builder.addExternCppDecoration(mgp, toSlice("_slang_mgp"));
     }
 
+    // Legalize shader parameter `param` for Metal if its value type `paramType` is an
+    // imageblock. `entryPointDecor` describes the entry point that declares `param`, or is
+    // null for a global that belongs to no single entry point.
+    void legalizeImageBlockParam(
+        IRInst* param,
+        IRType* paramType,
+        IREntryPointDecoration* entryPointDecor)
+    {
+        auto imageBlockType = as<IRMetalImageBlockType>(paramType);
+        if (!imageBlockType)
+            return;
+        if (entryPointDecor && entryPointDecor->getProfile().getStage() != Stage::Tile)
+        {
+            m_sink->diagnose(
+                Diagnostics::MetalImageBlockOutsideTileStage{.location = getDiagnosticPos(param)});
+        }
+        if (m_legalizedImageBlockTypes.add(imageBlockType))
+            legalizeImageBlockType(imageBlockType, param);
+    }
+
+    // Translate the `SV_Target` semantics of the element struct of `imageBlockType` into
+    // Metal `[[color(N)]]` attributes, diagnosing element types that Metal cannot use as an
+    // implicit imageblock layout.
+    //
+    // Consider this example:
+    //
+    //     struct Pixel { float4 color : SV_Target0; float depth : SV_Target1; };
+    //     [shader("tile")] [numthreads(8, 8, 1)]
+    //     void tileMain(MetalImageBlock<Pixel> image, uint2 tid : SV_GroupThreadID) { ... }
+    //
+    // Lowering keeps `Pixel` as the element type of `IRMetalImageBlockType`, and the
+    // `read`/`write` intrinsics return and accept that same struct. Unlike ordinary
+    // varyings, the fields never pass through entry-point parameter packing, so we decorate
+    // the original field keys here, using the same `SV_Target` mapping as fragment outputs.
+    // Metal emit then prints `[[color(0)]]` and `[[color(1)]]` on the fields of `Pixel`.
+    // An element type that is not a struct, such as in `MetalImageBlock<float4>`, is
+    // reported at `param`, the shader parameter that holds the imageblock.
+    void legalizeImageBlockType(IRMetalImageBlockType* imageBlockType, IRInst* param)
+    {
+        auto pixelType = as<IRStructType>(imageBlockType->getElementType());
+        if (!pixelType)
+        {
+            m_sink->diagnose(
+                Diagnostics::MetalImageBlockElementNotStruct{.location = getDiagnosticPos(param)});
+            return;
+        }
+        IRBuilder builder(m_module);
+        for (auto field : pixelType->getFields())
+        {
+            auto key = field->getKey();
+            auto semantic = key->findDecoration<IRSemanticDecoration>();
+            if (!semantic ||
+                !semantic->getSemanticName().startsWithCaseInsensitive(toSlice("sv_target")))
+            {
+                m_sink->diagnose(Diagnostics::MetalImageBlockFieldMissingTargetSemantic{
+                    .location = key->sourceLoc});
+                continue;
+            }
+            String index(semantic->getEffectiveSemanticIndex());
+            auto info = getSystemValueInfo(String(semantic->getSemanticName()), &index, key);
+            SLANG_ASSERT(info.systemValueNameEnum == SystemValueSemanticName::Target);
+            if (!info.permittedTypes.contains(field->getFieldType()))
+            {
+                m_sink->diagnose(
+                    Diagnostics::MetalImageBlockFieldTypeNotSupported{.location = key->sourceLoc});
+                continue;
+            }
+            builder.addTargetSystemValueDecoration(key, info.systemValueName.getUnownedSlice());
+        }
+    }
+
     void legalizeMeshStageEntryPoint(const EntryPointInfo& entryPoint) SLANG_OVERRIDE
     {
         auto func = entryPoint.entryPointFunc;
@@ -5071,6 +5200,7 @@ protected:
 
 private:
     ShortList<IRType*> permittedTypes_sv_target;
+    HashSet<IRInst*> m_legalizedImageBlockTypes;
     Dictionary<IRFunc*, IRInst*> entryPointToGroupThreadId;
     const UnownedStringSlice groupThreadIDString = UnownedStringSlice("sv_groupthreadid");
 
@@ -5084,7 +5214,7 @@ private:
     void generatePermittedTypes_sv_target()
     {
         IRBuilder builder(m_module);
-        permittedTypes_sv_target.reserveOverflowBuffer(5 * 4);
+        permittedTypes_sv_target.reserveOverflowBuffer(6 * 5);
         if (permittedTypes_sv_target.getCount() == 0)
         {
             for (auto baseType :
@@ -5095,6 +5225,7 @@ private:
                   BaseType::Int16,
                   BaseType::UInt16})
             {
+                permittedTypes_sv_target.add(builder.getBasicType(baseType));
                 for (IRIntegerValue i = 1; i <= 4; i++)
                 {
                     permittedTypes_sv_target.add(
@@ -5493,6 +5624,7 @@ void legalizeEntryPointVaryingParamsForMetal(
         }
     }
     LegalizeMetalEntryPointContext context(module, sink);
+    context.legalizeImageBlocks(entryPoints);
     context.legalizeEntryPoints(entryPoints);
 }
 

@@ -213,6 +213,9 @@ static void emitReflectionVarBindingInfoJSON(
         case SLANG_STAGE_COMPUTE:
             stageName = "compute";
             break;
+        case SLANG_STAGE_TILE:
+            stageName = "tile";
+            break;
         case SLANG_STAGE_MESH:
             stageName = "mesh";
             break;
@@ -1389,6 +1392,9 @@ static void emitReflectionEntryPointJSON(
     case SLANG_STAGE_COMPUTE:
         writer << ",\n\"stage\": \"compute\"";
         break;
+    case SLANG_STAGE_TILE:
+        writer << ",\n\"stage\": \"tile\"";
+        break;
     case SLANG_STAGE_MESH:
         writer << ",\n\"stage\": \"mesh\"";
         break;
@@ -1438,7 +1444,8 @@ static void emitReflectionEntryPointJSON(
     // size of 1x1x1.
     auto stage = entryPoint->getStage();
     if (stage == SLANG_STAGE_COMPUTE || stage == SLANG_STAGE_MESH ||
-        stage == SLANG_STAGE_AMPLIFICATION || stage == SLANG_STAGE_NODE)
+        stage == SLANG_STAGE_AMPLIFICATION || stage == SLANG_STAGE_NODE ||
+        stage == SLANG_STAGE_TILE)
     {
         SlangUInt threadGroupSize[3];
         entryPoint->getComputeThreadGroupSize(3, threadGroupSize);

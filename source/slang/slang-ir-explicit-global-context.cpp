@@ -459,6 +459,38 @@ struct IntroduceExplicitGlobalContextPass
         m_mapInstToContextFieldInfo.add(originalInst, ContextFieldInfo{key, needDereference});
     }
 
+    bool doesEntryPointUseGlobalParam(IRFunc* entryPointFunc, const GlobalParamInfo& globalParam)
+    {
+        if (globalParam.originatingEntryPoint)
+            return globalParam.originatingEntryPoint == entryPointFunc;
+
+        HashSet<IRFunc*> visitedFuncs;
+        List<IRFunc*> workList;
+        auto enqueueFunc = [&](IRFunc* func)
+        {
+            if (func && visitedFuncs.add(func))
+                workList.add(func);
+        };
+
+        for (auto use = globalParam.globalParam->firstUse; use; use = use->nextUse)
+        {
+            enqueueFunc(getParentFunc(use->getUser()));
+        }
+
+        for (Index i = 0; i < workList.getCount(); ++i)
+        {
+            auto func = workList[i];
+            if (func == entryPointFunc)
+                return true;
+            for (auto use = func->firstUse; use; use = use->nextUse)
+            {
+                if (auto call = as<IRCall>(use->getUser()))
+                    enqueueFunc(getParentFunc(call));
+            }
+        }
+        return false;
+    }
+
     void createContextForEntryPoint(IRFunc* entryPointFunc)
     {
         // We can only introduce the explicit context into
@@ -481,6 +513,10 @@ struct IntroduceExplicitGlobalContextPass
         // each entry-point function to represent it.
         //
 
+        auto entryPointDecor = entryPointFunc->findDecoration<IREntryPointDecoration>();
+        auto entryPointStage =
+            entryPointDecor ? entryPointDecor->getProfile().getStage() : Stage::Unknown;
+
         List<GlobalParamInfo> entryPointParamsToAdd;
         for (auto globalParam : m_globalParams)
         {
@@ -488,6 +524,17 @@ struct IntroduceExplicitGlobalContextPass
             // explicitly originates from a different entry point.
             if (globalParam.originatingEntryPoint &&
                 globalParam.originatingEntryPoint != entryPointFunc)
+            {
+                continue;
+            }
+
+            // Metal allows at most one implicit-layout `imageblock` parameter per tile
+            // entry point and forbids `imageblock` parameters on non-tile stages, so
+            // only attach a `MetalImageBlock` global parameter to tile entry points that
+            // reference it.
+            if (as<IRMetalImageBlockType>(globalParam.globalParam->getFullType()) &&
+                (entryPointStage != Stage::Tile ||
+                 !doesEntryPointUseGlobalParam(entryPointFunc, globalParam)))
             {
                 continue;
             }

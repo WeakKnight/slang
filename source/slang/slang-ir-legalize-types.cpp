@@ -2961,6 +2961,10 @@ static LegalVal declareSimpleVar(
 
         if (leafVar)
         {
+            // The new variable stands in for `leafVar`, so diagnostics about it point at the
+            // user's declaration, such as the field `MetalImageBlock<float4> imageBlock;` of
+            // a struct whose resources are split into separate parameters.
+            irVar->sourceLoc = leafVar->sourceLoc;
             cloneDecorationToVar(leafVar, irVar);
             if (as<IRStructKey>(leafVar))
             {

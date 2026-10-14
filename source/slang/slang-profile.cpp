@@ -121,6 +121,8 @@ Stage getStageFromAtom(CapabilityAtom atom)
         return Stage::Fragment;
     case CapabilityAtom::compute:
         return Stage::Compute;
+    case CapabilityAtom::tile:
+        return Stage::Tile;
     case CapabilityAtom::_mesh:
         return Stage::Mesh;
     case CapabilityAtom::_amplification:
@@ -156,6 +158,8 @@ CapabilityAtom getAtomFromStage(Stage stage)
     {
     case Stage::Compute:
         return CapabilityAtom::compute;
+    case Stage::Tile:
+        return CapabilityAtom::tile;
     case Stage::Vertex:
         return CapabilityAtom::vertex;
     case Stage::Fragment:

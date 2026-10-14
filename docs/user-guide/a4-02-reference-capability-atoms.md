@@ -115,6 +115,9 @@ Stages
 `tesseval`
 > Tessellation Evaluation shader stage
 
+`tile`
+> Tile shader stage (Metal only)
+
 `vertex`
 > Vertex shader stage
 

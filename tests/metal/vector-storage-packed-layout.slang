@@ -44,9 +44,9 @@ void computeMain(uint3 tid : SV_DispatchThreadID)
 // METAL: packed_float4 v
 
 // METAL-NOT: {{[ (,]float3 device\* positions}}
-// METAL-DAG: packed_float3 device* positions
-// METAL-DAG: packed_float4 device* colors
-// METAL-DAG: packed_float2 device* uvs
-// METAL-DAG: packed_float3 device* positionsScalar
-// METAL-DAG: packed_bool3 device* flags
+// METAL-DAG: packed_float3 const device* positions
+// METAL-DAG: packed_float4 const device* colors
+// METAL-DAG: packed_float2 const device* uvs
+// METAL-DAG: packed_float3 const device* positionsScalar
+// METAL-DAG: packed_bool3 const device* flags
 // METAL-NOT: {{[ (,]float3 device\* positions}}

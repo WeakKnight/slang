@@ -5447,6 +5447,12 @@ static TypeLayoutResult _createTypeLayout(TypeLayoutContext& context, Type* type
 
         return TypeLayoutResult(typeLayout, info);
     }
+    else if (as<MetalImageBlockType>(type))
+    {
+        // Metal supplies the imageblock from the current render pass. It consumes no
+        // buffer, texture, or interpolated varying slot in the entry point layout.
+        return createSimpleTypeLayout(SimpleLayoutInfo(), type, rules);
+    }
     else if (as<SubpassInputType>(type))
     {
         // SubpassInputType fills 2 slots, 'shader resource' and 'input_attachment_index'

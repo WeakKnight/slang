@@ -55,6 +55,7 @@ The system-value semantics are translated to the following Metal attributes:
 | `SV_VulkanInstanceID`       | `[[instance_id]]`                                    |
 | `SV_VulkanSamplePosition`   | `(Not supported)`                                    |
 | `SV_VulkanVertexID`         | `[[vertex_id]]`                                      |
+| `SV_MetalThreadgroup<N>`    | `[[threadgroup(N)]]`                                 |
 
 _Note_ that `SV_InstanceID` counts from zero within a draw call, as in D3D, while Metal's
 `[[instance_id]]` includes the base instance, so the two are not the same value. Use
@@ -86,7 +87,7 @@ Resource types are translated with appropriate Metal qualifiers:
 | `Texture2D`           | `texture2d`        |
 | `RWTexture2D`         | `texture2d`        |
 | `ByteAddressBuffer`   | `uint32_t device*` |
-| `StructuredBuffer<T>` | `device* T`        |
+| `StructuredBuffer<T>` | `const device* T`  |
 | `ConstantBuffer<T>`   | `constant* T`      |
 
 | Slang Type                        | Metal Translation                     |
@@ -107,7 +108,7 @@ Resource types are translated with appropriate Metal qualifiers:
 | `RWBuffer<T>`                     | `device* T`                           |
 | `ByteAddressBuffer`               | `device* uint32_t`                    |
 | `RWByteAddressBuffer`             | `device* uint32_t`                    |
-| `StructuredBuffer<T>`             | `device* T`                           |
+| `StructuredBuffer<T>`             | `const device* T`                     |
 | `RWStructuredBuffer<T>`           | `device* T`                           |
 | `AppendStructuredBuffer<T>`       | `device* T`                           |
 | `ConsumeStructuredBuffer<T>`      | `device* T`                           |
@@ -345,3 +346,103 @@ Translates to:
 constant int fc_a_0 [[function_constant(7)]];
 constant int a_0 = is_function_constant_defined(fc_a_0) ? fc_a_0 : 2;
 ```
+
+## Native tile shaders
+
+`[shader("tile")]` declares a Metal tile kernel. The entry point must return `void`
+and declare `[numthreads(x, y, z)]`. These dimensions describe the threads dispatched
+per tile; they can differ from the render pass tile dimensions. Tile shaders are only
+supported on the Metal targets.
+
+`MetalImageBlock<T>` accesses the render pass's implicit imageblock. `T` must be a
+struct whose fields use `SV_Target<N>` semantics to select color attachments, and each
+field type must be a valid Metal color attachment type. Slang preserves that struct and
+emits its fields with `[[color(N)]]` attributes, and the parameter itself is emitted as
+`imageblock<T, imageblock_layout_implicit>`. The imageblock parameter requires no
+application resource binding.
+
+Like a texture, a `MetalImageBlock<T>` is a shader parameter. It can be an entry-point
+parameter, a global, or a field of a uniform struct, and Slang passes it to the tile
+kernel as its own parameter. It cannot be placed in a `ParameterBlock`, because a Metal
+argument buffer cannot hold an imageblock, and it cannot be declared on an entry point of
+another stage.
+
+```slang
+struct TileParams
+{
+    MetalImageBlock<TilePixel> image;
+    float exposure;
+};
+
+uniform TileParams gTile;
+```
+
+```slang
+struct TilePixel
+{
+    float4 color : SV_Target0;
+};
+
+[shader("tile")]
+[numthreads(8, 8, 1)]
+void tileMain(MetalImageBlock<TilePixel> image, uint2 tid : SV_GroupThreadID)
+{
+    for (uint y = tid.y; y < image.getHeight(); y += 8)
+    {
+        for (uint x = tid.x; x < image.getWidth(); x += 8)
+        {
+            uint2 position = uint2(x, y);
+            TilePixel pixel = image.read(position);
+            pixel.color.rgb = 1.0 - pixel.color.rgb;
+            image.write(pixel, position);
+        }
+    }
+}
+```
+
+Tile-local coordinates start at zero for each tile. The strided loops cover the
+imageblock even when it is larger than the threadgroup. `SV_GroupThreadID`,
+`SV_GroupIndex`, and `SV_GroupID` (the tile's position in the render target grid) are
+available; `SV_DispatchThreadID` is not a tile shader input.
+
+`read(position)` and `write(value, position)` access the imageblock at pixel rate. For
+multisampled render passes, `getSampleCount()` and `readSample(position, sampleIndex)`
+read individual samples, for example to compute a conservative depth range per tile.
+Explicit imageblock layouts are not supported.
+
+Compile with `slangc tile.slang -entry tileMain -target metal` or `-target metallib`.
+On the host, the tile kernel is used through a Metal tile render pipeline whose
+attachment formats match the render pass, and is dispatched with
+`dispatchThreadsPerTile` inside the render command encoder.
+
+### Persistent tile memory
+
+A parameter of type `Ptr<T, Access.ReadWrite, AddressSpace.GroupShared>` with the
+`SV_MetalThreadgroup<N>` semantic accesses the Metal `[[threadgroup(N)]]` memory of a
+tile or fragment entry point, where `T` describes the layout of that memory. The
+application allocates this memory on the render pass, and it persists across the tile
+dispatches and fragment draws that run on a tile, unlike ordinary `groupshared`
+variables. The memory is not initialized.
+
+```slang
+struct TileLights
+{
+    uint count;
+    uint indices[64];
+};
+
+[shader("tile")]
+[numthreads(16, 16, 1)]
+void clearLights(
+    Ptr<TileLights, Access.ReadWrite, AddressSpace.GroupShared> lights : SV_MetalThreadgroup0,
+    uint index : SV_GroupIndex)
+{
+    if (index == 0)
+        lights->count = 0;
+}
+```
+
+Pointer indexing, member access, and `Interlocked*` operations through the parameter keep
+the threadgroup address space, and `GroupMemoryBarrierWithGroupSync()` synchronizes the
+threads of a tile kernel. Tile dispatches in a render pass execute in order for each
+tile.

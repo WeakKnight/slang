@@ -43,6 +43,7 @@ enum class MetalInvalidParameterBlockType
     None,
     ConstantBufferWithResource,
     SubpassInput,
+    ImageBlock,
 };
 
 static MetalInvalidParameterBlockType findMetalInvalidParameterBlockType(IRType* elementType)
@@ -55,6 +56,15 @@ static MetalInvalidParameterBlockType findMetalInvalidParameterBlockType(IRType*
     };
     if (isOrContains(isSubpassInput, elementType))
         return MetalInvalidParameterBlockType::SubpassInput;
+
+    auto isImageBlock = [](IRType* t) -> std::optional<IRType*>
+    {
+        if (as<IRMetalImageBlockType>(t))
+            return t;
+        return {};
+    };
+    if (isOrContains(isImageBlock, elementType))
+        return MetalInvalidParameterBlockType::ImageBlock;
 
     auto isConstantBufferWithResource = [](IRType* t) -> std::optional<IRType*>
     {
@@ -102,6 +112,9 @@ void checkForInvalidShaderParameterTypeForMetal(IRModule* module, DiagnosticSink
         case MetalInvalidParameterBlockType::SubpassInput:
             sink->diagnose(
                 Diagnostics::SubpassInputInParameterBlockNotAllowedOnMetal{.location = loc});
+            break;
+        case MetalInvalidParameterBlockType::ImageBlock:
+            sink->diagnose(Diagnostics::MetalImageBlockInParameterBlockNotAllowed{.location = loc});
             break;
         case MetalInvalidParameterBlockType::ConstantBufferWithResource:
             sink->diagnose(

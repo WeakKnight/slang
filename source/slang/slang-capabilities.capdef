@@ -501,6 +501,10 @@ def fragment : stage;
 /// [Stage]
 def compute : stage;
 
+/// Tile shader stage (Metal only)
+/// [Stage]
+def tile : stage + metal;
+
 /// Hull shader stage
 /// [Stage]
 def hull : stage;
@@ -1536,7 +1540,7 @@ alias node = _node + _sm_6_8;
 /// [Compound]
 alias any_stage = vertex | fragment | compute | hull | domain | geometry
                  | raygen | intersection | anyhit | closesthit | miss | mesh
-                 | amplification | callable | node
+                 | amplification | callable | node | tile
                  ;
 
 /// Collection of shader stages

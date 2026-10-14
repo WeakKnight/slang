@@ -618,6 +618,12 @@ local insts = {
 					},
 					{ mesh_grid_properties = { struct_name = "MetalMeshGridPropertiesType" } },
 					{
+						MetalImageBlock = {
+							struct_name = "MetalImageBlockType",
+							operands = { { "elementType", "IRType" } },
+						},
+					},
+					{
 						HLSLStructuredBufferTypeBase = {
 							{ StructuredBuffer = { struct_name = "HLSLStructuredBufferType" } },
 							{ RWStructuredBuffer = { struct_name = "HLSLRWStructuredBufferType" } },

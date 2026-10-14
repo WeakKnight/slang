@@ -269,6 +269,7 @@ void MetalSourceEmitter::emitEntryPointAttributesImpl(
         m_writer->emit("[[vertex]] ");
         break;
     case Stage::Compute:
+    case Stage::Tile:
         emitRequiredThreadsPerThreadgroup();
         m_writer->emit("[[kernel]] ");
         break;
@@ -1440,6 +1441,10 @@ void MetalSourceEmitter::emitSimpleTypeImpl(IRType* type)
                 m_writer->emit("const ");
             }
             emitType((IRType*)ptrType->getValueType());
+            if (type->getOp() == kIROp_PtrType &&
+                (ptrType->getAccessQualifier() == AccessQualifier::Read ||
+                 ptrType->getAccessQualifier() == AccessQualifier::Immutable))
+                m_writer->emit(" const");
             switch (ptrType->getAddressSpace())
             {
             case AddressSpace::Global:
@@ -1481,6 +1486,13 @@ void MetalSourceEmitter::emitSimpleTypeImpl(IRType* type)
     case kIROp_MetalMeshGridPropertiesType:
         {
             m_writer->emit("mesh_grid_properties ");
+            return;
+        }
+    case kIROp_MetalImageBlockType:
+        {
+            m_writer->emit("imageblock<");
+            emitType(cast<IRMetalImageBlockType>(type)->getElementType());
+            m_writer->emit(", imageblock_layout_implicit>");
             return;
         }
     case kIROp_AtomicType:
@@ -1535,6 +1547,8 @@ void MetalSourceEmitter::emitSimpleTypeImpl(IRType* type)
     else if (auto structuredBufferType = as<IRHLSLStructuredBufferTypeBase>(type))
     {
         emitType(structuredBufferType->getElementType());
+        if (type->getOp() == kIROp_HLSLStructuredBufferType)
+            m_writer->emit(" const");
         m_writer->emit(" device*");
         return;
     }

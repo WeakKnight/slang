@@ -23873,6 +23873,78 @@ $}
 }
 
 //
+// MetalImageBlock
+//
+
+/// The implicit imageblock of the current render pass, accessed from a Metal tile shader.
+/// `T` must be a struct whose fields select color attachments with `SV_Target` semantics.
+/// For example, with `struct Pixel { float4 color : SV_Target0; }`, `read` and `write`
+/// access color attachment 0 at a tile-local position, without a texture binding.
+/// Like a texture, an imageblock is a shader parameter: it can be an entry-point parameter,
+/// a global, or a field of a uniform struct, but not part of a `ParameterBlock`, because a
+/// Metal argument buffer cannot hold it.
+/// @category stage_io
+__magic_type(MetalImageBlockType)
+__intrinsic_type($(kIROp_MetalImageBlockType))
+[require(tile)]
+struct MetalImageBlock<T>
+{
+    /// Returns the imageblock width in pixels.
+    uint getWidth()
+    {
+        __target_switch
+        {
+        case metal: __intrinsic_asm "$0.get_width()";
+        }
+    }
+
+    /// Returns the imageblock height in pixels.
+    uint getHeight()
+    {
+        __target_switch
+        {
+        case metal: __intrinsic_asm "$0.get_height()";
+        }
+    }
+
+    /// Returns the number of raster samples per pixel.
+    uint getSampleCount()
+    {
+        __target_switch
+        {
+        case metal: __intrinsic_asm "$0.get_num_samples()";
+        }
+    }
+
+    /// Reads the attachment values at a position within this tile, at pixel rate.
+    T read(uint2 position)
+    {
+        __target_switch
+        {
+        case metal: __intrinsic_asm "$0.read(ushort2($1))";
+        }
+    }
+
+    /// Reads the attachment values of one sample at a position within this tile.
+    T readSample(uint2 position, uint sampleIndex)
+    {
+        __target_switch
+        {
+        case metal: __intrinsic_asm "$0.read(ushort2($1), ushort($2), imageblock_data_rate::sample)";
+        }
+    }
+
+    /// Writes the attachment values at a position within this tile.
+    void write(T value, uint2 position)
+    {
+        __target_switch
+        {
+        case metal: __intrinsic_asm "$0.write($1, ushort2($2))";
+        }
+    }
+}
+
+//
 // SubpassInput
 //
 

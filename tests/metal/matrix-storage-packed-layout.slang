@@ -45,7 +45,7 @@ void computeMain(uint3 tid : SV_DispatchThreadID)
 // PACKED-NOT: array<float3,
 
 // The `ScalarDataLayout`-annotated buffer maps to the same packed storage.
-// PACKED-DAG: _MatrixStorage_float3x3{{[A-Za-z0-9_]*}} device* matsScalar
+// PACKED-DAG: _MatrixStorage_float3x3{{[A-Za-z0-9_]*}} const device* matsScalar
 
 // Column-major (default): a row is not contiguous, so the whole-row store
 // scatters into per-component stores and the load gathers a `float3`.

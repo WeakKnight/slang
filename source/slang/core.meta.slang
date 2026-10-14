@@ -5253,18 +5253,21 @@ semantic sv_groupid
     // HLSL requires uint3, but other backends (CUDA, SPIRV) extract appropriate
     // components. See dispatch-thread-id-extraction.slang.
     [require(compute)]
+    [require(tile)]
     [require(mesh)]
     [require(amplification)]
     [require(node)]
     get : uint;
 
     [require(compute)]
+    [require(tile)]
     [require(mesh)]
     [require(amplification)]
     [require(node)]
     get : uint2;
 
     [require(compute)]
+    [require(tile)]
     [require(mesh)]
     [require(amplification)]
     [require(node)]
@@ -5274,6 +5277,7 @@ semantic sv_groupid
 semantic sv_groupindex
 {
     [require(compute)]
+    [require(tile)]
     [require(mesh)]
     [require(amplification)]
     [require(node)]
@@ -5286,18 +5290,21 @@ semantic sv_groupthreadid
     // HLSL requires uint3, but other backends (CUDA, SPIRV) extract appropriate
     // components.
     [require(compute)]
+    [require(tile)]
     [require(mesh)]
     [require(amplification)]
     [require(node)]
     get : uint;
 
     [require(compute)]
+    [require(tile)]
     [require(mesh)]
     [require(amplification)]
     [require(node)]
     get : uint2;
 
     [require(compute)]
+    [require(tile)]
     [require(mesh)]
     [require(amplification)]
     [require(node)]
@@ -5582,4 +5589,15 @@ semantic sv_vulkansampleposition
 {
     [require(fragment)]
     get : float2;
+}
+
+// Metal tile memory is allocated per render pass and persists across the tile and
+// fragment functions that run on a tile. The semantic index selects the threadgroup
+// memory binding, emitted as `[[threadgroup(N)]]`, and the pointee type `T` describes
+// the layout of that memory.
+semantic sv_metalthreadgroup
+{
+    [require(tile)]
+    [require(metal, fragment)]
+    get<T> : Ptr<T, Access.ReadWrite, AddressSpace.GroupShared>;
 }

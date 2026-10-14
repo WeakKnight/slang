@@ -2172,6 +2172,27 @@ struct LoweredElementTypeContext
             materializeStorageToLogicalCastsImpl(inst);
     }
 
+    // Return the access qualifier for an address derived from a value of `baseType`,
+    // given the `access` its producer would otherwise use.
+    //
+    // Consider `StructuredBuffer<Vertex> vertices;` read as `vertices[i].position`.
+    // Lowering the load builds a chain of element and field addresses into the buffer.
+    // Those addresses point into read-only storage, so they keep `Read` access instead
+    // of the default `ReadWrite`. Targets rely on this: Metal emits `Read` pointers as
+    // `const device*`, and a read-only buffer cannot initialize a mutable pointer.
+    static AccessQualifier getAccessOfDerivedAddress(IRType* baseType, AccessQualifier access)
+    {
+        if (baseType->getOp() == kIROp_HLSLStructuredBufferType)
+            return AccessQualifier::Read;
+        if (auto basePtrType = as<IRPtrTypeBase>(baseType))
+        {
+            auto baseAccess = basePtrType->getAccessQualifier();
+            if (baseAccess == AccessQualifier::Read || baseAccess == AccessQualifier::Immutable)
+                return baseAccess;
+        }
+        return access;
+    }
+
     IRPtrType* getPointerTypeWithBufferLayout(
         IRBuilder& builder,
         IRType* bufferType,
@@ -2181,7 +2202,7 @@ struct LoweredElementTypeContext
         IRType* layoutType = getTypeLayoutTypeForBuffer(target, builder, bufferType);
         return builder.getPtrType(
             elementType,
-            AccessQualifier::ReadWrite,
+            getAccessOfDerivedAddress(bufferType, AccessQualifier::ReadWrite),
             loweringConfig.addressSpace,
             layoutType);
     }
@@ -2192,8 +2213,8 @@ struct LoweredElementTypeContext
         IRPtrTypeBase* pointerType)
     {
         IRType* layoutType = getTypeLayoutTypeForBuffer(target, builder, bufferType);
-
-        AccessQualifier access = pointerType->getAccessQualifier();
+        AccessQualifier access =
+            getAccessOfDerivedAddress(bufferType, pointerType->getAccessQualifier());
         AddressSpace addressSpace = pointerType->getAddressSpace();
 
         return builder.getPtrType(pointerType->getValueType(), access, addressSpace, layoutType);

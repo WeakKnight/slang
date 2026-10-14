@@ -82,6 +82,7 @@ void depointerizeInputParams(IRFunc* entryPoint);
     M(VulkanVertexID, SV_VulkanVertexID)                 \
     M(VulkanInstanceID, SV_VulkanInstanceID)             \
     M(VulkanSamplePosition, SV_VulkanSamplePosition)     \
+    M(MetalThreadgroup, SV_MetalThreadgroup)             \
     M(Barycentrics, SV_Barycentrics)                     \
 /* end */
 

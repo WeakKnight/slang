@@ -6159,6 +6159,48 @@ err(
     span { loc = "location", message = "SubpassInput cannot be placed inside a ParameterBlock on Metal; framebuffer fetch inputs must be direct entry-point parameters." }
 )
 
+err(
+    "tile-entry-point-must-return-void",
+    56110,
+    "tile shader entry point must return 'void'",
+    span { loc = "decl:Decl", message = "a tile shader writes its results through its imageblock or threadgroup memory, so its entry point cannot return a value." }
+)
+
+err(
+    "metal-image-block-element-not-struct",
+    56111,
+    "MetalImageBlock element type must be a struct",
+    span { loc = "location", message = "the element type of 'MetalImageBlock' must be a struct whose fields select color attachments with 'SV_Target' semantics." }
+)
+
+err(
+    "metal-image-block-field-missing-target-semantic",
+    56112,
+    "MetalImageBlock field requires an SV_Target semantic",
+    span { loc = "location", message = "each field of a 'MetalImageBlock' element struct must use an 'SV_Target' semantic to select its color attachment." }
+)
+
+err(
+    "metal-image-block-field-type-not-supported",
+    56113,
+    "MetalImageBlock field type is not a color attachment type",
+    span { loc = "location", message = "a 'MetalImageBlock' color attachment field must be a scalar or vector of 'float', 'half', 'int', 'uint', 'int16_t' or 'uint16_t'." }
+)
+
+err(
+    "metal-image-block-outside-tile-stage",
+    56114,
+    "MetalImageBlock is only available to tile shaders",
+    span { loc = "location", message = "Metal supplies an imageblock only to tile shaders, so a 'MetalImageBlock' shader parameter cannot belong to an entry point of another stage." }
+)
+
+err(
+    "metal-image-block-in-parameter-block-not-allowed",
+    56115,
+    "MetalImageBlock in ParameterBlock not supported on Metal",
+    span { loc = "location", message = "an imageblock cannot be stored in a Metal argument buffer, so 'MetalImageBlock' cannot be placed inside a ParameterBlock; declare it as a global, an entry-point parameter, or a field of a uniform struct instead." }
+)
+
 -- SPIRV (57001-57007)
 
 warning(

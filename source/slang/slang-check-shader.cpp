@@ -104,15 +104,20 @@ static BasicExpressionType* getScalarElementType(Type* type, IntegerLiteralValue
 }
 
 // Check if two types are compatible for system value semantics.
-// Two types are compatible when they have the same shape (both scalar, or both
-// vectors of the same element count) and their scalar element types belong to
-// the same type category (integer, floating-point, or bool). This allows sign
-// coercions like int3 for a uint3 semantic while rejecting cross-category
-// coercions like float for a uint semantic.
+// Identical types are always compatible; this covers non-numeric semantic types
+// such as the pointer type of `SV_MetalThreadgroup`, once its generic accessor has
+// been specialized. Otherwise, two types are compatible when they have the
+// same shape (both scalar, or both vectors of the same element count) and their
+// scalar element types belong to the same type category (integer, floating-point,
+// or bool). This allows sign coercions like int3 for a uint3 semantic while
+// rejecting cross-category coercions like float for a uint semantic.
 static bool isSemanticTypeCompatible(Type* expectedType, Type* type)
 {
     // Unwrap Conditional<T, hasValue> to T
     type = unwrapConditionalType(type);
+
+    if (expectedType->equals(type))
+        return true;
 
     IntegerLiteralValue expectedCount = 0, typeCount = 0;
     auto expectedElem = getScalarElementType(expectedType, expectedCount);
@@ -156,6 +161,62 @@ static SemanticDecl* lookUpSemanticDecl(
         return nullptr;
 
     return as<SemanticDecl>(lookupResult.item.declRef.getDecl());
+}
+
+// Return the getter or setter that `member` of a `SemanticDecl` declares, looking through
+// the `GenericDecl` that wraps a generic accessor, or null if `member` is not an accessor.
+static Decl* getSemanticAccessor(Decl* member)
+{
+    if (auto genericDecl = as<GenericDecl>(member))
+        member = genericDecl->inner;
+    if (as<SemanticGetterDecl>(member) || as<SemanticSetterDecl>(member))
+        return member;
+    return nullptr;
+}
+
+// Return `accessorType`, the type declared by semantic accessor `accessor`, specialized to
+// match a parameter of `type` when the accessor is generic. Return null when no
+// specialization of a generic accessor matches `type`.
+//
+// Consider this example:
+//
+//     semantic sv_metalthreadgroup
+//     {
+//         get<T> : Ptr<T, Access.ReadWrite, AddressSpace.GroupShared>;
+//     }
+//
+// For a parameter of type `Ptr<LightList, Access.ReadWrite, AddressSpace.GroupShared>`, we
+// unify the accessor type with the parameter type to solve `T = LightList`, the same way that
+// `applyExtensionToType` matches a generic extension, and return the substituted accessor
+// type, which the caller then compares with the parameter type as usual.
+static Type* specializeSemanticAccessorType(
+    SemanticsVisitor* visitor,
+    Decl* accessor,
+    Type* accessorType,
+    Type* type)
+{
+    auto genericDecl = as<GenericDecl>(accessor->parentDecl);
+    if (!genericDecl)
+        return accessorType;
+
+    SemanticsVisitor::GenericInferenceContext inferenceContext;
+    inferenceContext.genericDecl = genericDecl;
+    if (!visitor->TryUnifyTypes(
+            inferenceContext,
+            SemanticsVisitor::UnificationOptions(),
+            accessorType,
+            type))
+        return nullptr;
+
+    ConversionCost baseCost;
+    auto solvedDeclRef = visitor->trySolveGenericArguments(
+        _Move(inferenceContext),
+        makeDeclRef(genericDecl),
+        ArrayView<Val*>(),
+        baseCost);
+    if (!solvedDeclRef)
+        return nullptr;
+    return solvedDeclRef.substitute(visitor->getASTBuilder(), accessorType);
 }
 
 // True when `stageProjectedCaps` (an accessor requirement already projected onto `stage`) is
@@ -244,7 +305,7 @@ static void validateSystemValueSemanticForType(
     bool hasAnyAccessors = false;
     for (auto member : semanticDecl->getMembers())
     {
-        if (as<SemanticGetterDecl>(member) || as<SemanticSetterDecl>(member))
+        if (getSemanticAccessor(member))
         {
             hasAnyAccessors = true;
             break;
@@ -263,14 +324,13 @@ static void validateSystemValueSemanticForType(
     bool foundAccessorForDirection = false;
     List<Type*> validTypes;
 
-    for (auto member : semanticDecl->getMembers())
+    for (auto semanticMember : semanticDecl->getMembers())
     {
         // Check for getter (input) or setter (output)
-        bool isGetter = as<SemanticGetterDecl>(member) != nullptr;
-        bool isSetter = as<SemanticSetterDecl>(member) != nullptr;
-
-        if (!isGetter && !isSetter)
+        auto member = getSemanticAccessor(semanticMember);
+        if (!member)
             continue;
+        bool isSetter = as<SemanticSetterDecl>(member) != nullptr;
 
         // Direction check: getter = input, setter = output
         bool accessorIsOutput = isSetter;
@@ -308,7 +368,12 @@ static void validateSystemValueSemanticForType(
             continue;
         }
 
-        if (isSemanticTypeCompatible(accessorType, type))
+        auto specializedAccessorType = specializeSemanticAccessorType(
+            visitor,
+            member,
+            accessorType,
+            unwrapConditionalType(type));
+        if (specializedAccessorType && isSemanticTypeCompatible(specializedAccessorType, type))
         {
             foundMatchingAccessor = true;
             collectSemanticAccessorRequirement(member, stage, outInferredCaps);
@@ -911,6 +976,8 @@ bool isUniformParameterType(Type* type)
         return true;
     if (as<SubpassInputType>(type))
         return true;
+    if (as<MetalImageBlockType>(type))
+        return true;
     if (as<HLSLStructuredBufferTypeBase>(type))
         return true;
     if (as<UntypedBufferResourceType>(type))
@@ -921,8 +988,13 @@ bool isUniformParameterType(Type* type)
         return true;
     if (as<SamplerStateType>(type))
         return true;
-    if (as<PtrType>(type))
-        return true;
+    if (auto ptrType = as<PtrType>(type))
+    {
+        // A `GroupShared` pointer addresses memory owned by the executing threadgroup,
+        // so the host can never supply it as a uniform. It reaches an entry point as a
+        // system value instead, such as `SV_MetalThreadgroup0`.
+        return ptrType->tryGetAddressSpaceValue() != AddressSpace::GroupShared;
+    }
     if (auto arrayType = as<ArrayExpressionType>(type))
         return isUniformParameterType(arrayType->getElementType());
     if (auto modType = as<ModifiedType>(type))
@@ -1799,6 +1871,11 @@ void validateEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink)
 
     // Check if the return type is valid for a shader entry point
     auto returnType = entryPointFuncDecl->returnType.type;
+    if (stage == Stage::Tile && returnType &&
+        !returnType->equals(linkage->getASTBuilder()->getVoidType()))
+    {
+        sink->diagnose(Diagnostics::TileEntryPointMustReturnVoid{.decl = entryPointFuncDecl});
+    }
     if (returnType)
     {
         // Use the existing getTypeTags functionality to check for resource types
@@ -2176,8 +2253,9 @@ void validateEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink)
         }
     }
 
-    bool needsNumThreads = stage == Stage::Compute || stage == Stage::Mesh ||
-                           stage == Stage::Amplification || stage == Stage::Node;
+    bool needsNumThreads = stage == Stage::Compute || stage == Stage::Tile ||
+                           stage == Stage::Mesh || stage == Stage::Amplification ||
+                           stage == Stage::Node;
     if (needsNumThreads && !isThreadLaunchNode && !hasUncheckedNodeLaunchAttr &&
         !entryPointFuncDecl->findModifier<NumThreadsAttribute>())
     {
@@ -2553,8 +2631,14 @@ void validateEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink)
     {
         auto targetCaps = target->getTargetCaps();
         auto stageCapabilitySet = entryPoint->getProfile().getCapabilityName();
+        // A stage atom can itself be target-specific (`tile` implies `metal`). Joining
+        // such a stage into an incompatible target produces an invalid set, which an
+        // empty inferred requirement (for example an empty function body) does not
+        // detect, so we test the stage atom against the target before the join.
+        bool isStageIncompatible =
+            targetCaps.isIncompatibleWith(CapabilitySet(CapabilityName(getAtomFromStage(stage))));
         targetCaps.join(stageCapabilitySet);
-        if (targetCaps.isIncompatibleWith(entryPointInferredCaps))
+        if (isStageIncompatible || targetCaps.isIncompatibleWith(entryPointInferredCaps))
         {
             // Incompatable means we don't support a set of abstract atoms.
             // Diagnose that we lack support for 'stage' and 'target' atoms with our provided
