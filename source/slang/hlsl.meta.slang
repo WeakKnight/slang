@@ -19281,7 +19281,11 @@ T WaveReadLaneFirst(T expr)
     case metal: __intrinsic_asm "simd_broadcast_first";
     case spirv:
         return spirv_asm {OpCapability GroupNonUniformBallot; OpGroupNonUniformBroadcastFirst $$T result Subgroup $expr};
-    case wgsl: __intrinsic_asm "subgroupBroadcastFirst";
+    case wgsl:
+        // `subgroupBroadcastFirst` takes no bool: read it as 0/1.
+        if (__isBool<T>())
+            return __wgslUIntToBool<T>(WaveReadLaneFirst(__wgslBoolToUInt(expr)));
+        __intrinsic_asm "subgroupBroadcastFirst";
     case cuda:
         return WaveMaskReadLaneFirst(WaveGetActiveMask(), expr);
     }
@@ -19304,7 +19308,11 @@ vector<T,N> WaveReadLaneFirst(vector<T,N> expr)
     case metal: __intrinsic_asm "simd_broadcast_first";
     case spirv:
         return spirv_asm {OpCapability GroupNonUniformBallot; OpGroupNonUniformBroadcastFirst $$vector<T,N> result Subgroup $expr};
-    case wgsl: __intrinsic_asm "subgroupBroadcastFirst";
+    case wgsl:
+        // `subgroupBroadcastFirst` takes no bool: read it as 0/1.
+        if (__isBool<T>())
+            return __wgslUIntToBool<T, N>(WaveReadLaneFirst(__wgslBoolToUInt(expr)));
+        __intrinsic_asm "subgroupBroadcastFirst";
     case cuda:
         return WaveMaskReadLaneFirst(WaveGetActiveMask(), expr);
     }
@@ -19352,7 +19360,11 @@ T WaveBroadcastLaneAt(T value, constexpr int lane)
     case spirv:
         let ulane = uint(lane);
         return spirv_asm {OpCapability GroupNonUniformBallot; OpGroupNonUniformBroadcast $$T result Subgroup $value $ulane};
-    case wgsl: __intrinsic_asm "subgroupBroadcast";
+    case wgsl:
+        // `subgroupBroadcast` takes no bool: read it as 0/1.
+        if (__isBool<T>())
+            return __wgslUIntToBool<T>(WaveBroadcastLaneAt(__wgslBoolToUInt(value), lane));
+        __intrinsic_asm "subgroupBroadcast";
     case cuda:
         return WaveMaskBroadcastLaneAt(WaveGetActiveMask(), value, lane);
     }
@@ -19376,7 +19388,11 @@ vector<T,N> WaveBroadcastLaneAt(vector<T,N> value, constexpr int lane)
     case spirv:
         let ulane = uint(lane);
         return spirv_asm {OpCapability GroupNonUniformBallot; OpGroupNonUniformBroadcast $$vector<T,N> result Subgroup $value $ulane};
-    case wgsl: __intrinsic_asm "subgroupBroadcast";
+    case wgsl:
+        // `subgroupBroadcast` takes no bool: read it as 0/1.
+        if (__isBool<T>())
+            return __wgslUIntToBool<T, N>(WaveBroadcastLaneAt(__wgslBoolToUInt(value), lane));
+        __intrinsic_asm "subgroupBroadcast";
     case cuda:
         return WaveMaskBroadcastLaneAt(WaveGetActiveMask(), value, lane);
     }
@@ -19418,7 +19434,11 @@ T WaveReadLaneAt(T value, int lane)
     case spirv:
         let ulane = uint(lane);
         return spirv_asm {OpCapability GroupNonUniformShuffle; OpGroupNonUniformShuffle $$T result Subgroup $value $ulane};
-    case wgsl: __intrinsic_asm "subgroupShuffle";
+    case wgsl:
+        // `subgroupShuffle` takes no bool: read it as 0/1.
+        if (__isBool<T>())
+            return __wgslUIntToBool<T>(WaveReadLaneAt(__wgslBoolToUInt(value), lane));
+        __intrinsic_asm "subgroupShuffle";
     case cuda:
         return WaveMaskReadLaneAt(WaveGetActiveMask(), value, lane);
     }
@@ -19441,7 +19461,11 @@ vector<T,N> WaveReadLaneAt(vector<T,N> value, int lane)
     case spirv:
         let ulane = uint(lane);
         return spirv_asm {OpCapability GroupNonUniformShuffle; OpGroupNonUniformShuffle $$vector<T,N> result Subgroup $value $ulane};
-    case wgsl: __intrinsic_asm "subgroupShuffle";
+    case wgsl:
+        // `subgroupShuffle` takes no bool: read it as 0/1.
+        if (__isBool<T>())
+            return __wgslUIntToBool<T, N>(WaveReadLaneAt(__wgslBoolToUInt(value), lane));
+        __intrinsic_asm "subgroupShuffle";
     case cuda:
         return WaveMaskReadLaneAt(WaveGetActiveMask(), value, lane);
     }
@@ -19484,7 +19508,11 @@ T WaveShuffle(T value, int lane)
     case spirv:
         let ulane = uint(lane);
         return spirv_asm {OpCapability GroupNonUniformShuffle; OpGroupNonUniformShuffle $$T result Subgroup $value $ulane};
-    case wgsl: __intrinsic_asm "subgroupShuffle";
+    case wgsl:
+        // `subgroupShuffle` takes no bool: read it as 0/1.
+        if (__isBool<T>())
+            return __wgslUIntToBool<T>(WaveShuffle(__wgslBoolToUInt(value), lane));
+        __intrinsic_asm "subgroupShuffle";
     case cuda:
         return WaveMaskShuffle(WaveGetActiveMask(), value, lane);
     }
@@ -19508,7 +19536,11 @@ vector<T,N> WaveShuffle(vector<T,N> value, int lane)
     case spirv:
         let ulane = uint(lane);
         return spirv_asm {OpCapability GroupNonUniformShuffle; OpGroupNonUniformShuffle $$vector<T,N> result Subgroup $value $ulane};
-    case wgsl: __intrinsic_asm "subgroupShuffle";
+    case wgsl:
+        // `subgroupShuffle` takes no bool: read it as 0/1.
+        if (__isBool<T>())
+            return __wgslUIntToBool<T, N>(WaveShuffle(__wgslBoolToUInt(value), lane));
+        __intrinsic_asm "subgroupShuffle";
     case cuda:
         return WaveMaskShuffle(WaveGetActiveMask(), value, lane);
     }
